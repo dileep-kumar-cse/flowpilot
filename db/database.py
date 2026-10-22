@@ -12,17 +12,19 @@ from typing import Optional, Dict, Any, List
 DB_PATH = os.environ.get("FLOWPILOT_DB_PATH", "flowpilot.db")
 
 
-def get_db_connection(db_path: str = DB_PATH) -> sqlite3.Connection:
+def get_db_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
     """Returns a SQLite connection with Row factory enabled."""
-    conn = sqlite3.connect(db_path)
+    target_path = db_path or os.environ.get("FLOWPILOT_DB_PATH") or DB_PATH
+    conn = sqlite3.connect(target_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
 
-def init_db(db_path: str = DB_PATH) -> None:
+def init_db(db_path: Optional[str] = None) -> None:
     """Initializes all necessary tables for FlowPilot."""
-    conn = get_db_connection(db_path)
+    target_path = db_path or os.environ.get("FLOWPILOT_DB_PATH") or DB_PATH
+    conn = get_db_connection(target_path)
     cursor = conn.cursor()
 
     # 1. Employees table
@@ -127,7 +129,7 @@ def log_audit(
     actor: str,
     action: str,
     details: Optional[Any] = None,
-    db_path: str = DB_PATH
+    db_path: Optional[str] = None
 ) -> None:
     """Records an audit event into the audit_log table."""
     conn = get_db_connection(db_path)

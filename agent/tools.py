@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional
 from db.database import get_db_connection, log_audit, DB_PATH
 
 
-def check_leave_balance(employee_id: str, db_path: str = DB_PATH) -> Dict[str, Any]:
+def check_leave_balance(employee_id: str, db_path: Optional[str] = None) -> Dict[str, Any]:
     """
     Checks the remaining leave balances (annual, sick, casual) for a given employee.
 
@@ -55,7 +55,7 @@ def deduct_leave_balance(
     employee_id: str,
     days: int,
     leave_type: str = "annual",
-    db_path: str = DB_PATH
+    db_path: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Deducts approved leave days from the specified balance category.
@@ -101,7 +101,7 @@ def deduct_leave_balance(
     }
 
 
-def check_budget(department: str, amount: float, db_path: str = DB_PATH) -> Dict[str, Any]:
+def check_budget(department: str, amount: float, db_path: Optional[str] = None) -> Dict[str, Any]:
     """
     Checks if a department has sufficient remaining budget for a purchase request.
 
@@ -147,7 +147,7 @@ def check_budget(department: str, amount: float, db_path: str = DB_PATH) -> Dict
     }
 
 
-def deduct_budget(department: str, amount: float, db_path: str = DB_PATH) -> Dict[str, Any]:
+def deduct_budget(department: str, amount: float, db_path: Optional[str] = None) -> Dict[str, Any]:
     """
     Deducts approved purchase amount from the department's budget.
     """
@@ -188,7 +188,7 @@ def request_approval(
     role: str,
     request_id: str,
     approver_id: Optional[str] = None,
-    db_path: str = DB_PATH
+    db_path: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Registers a human-in-the-loop approval requirement for a request and pauses the workflow.
@@ -222,7 +222,7 @@ def request_approval(
         SET status = 'pending_approval', current_step = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         """,
-        (f"approval_{role.lower()}", request_id)
+        (f"{role.lower()}_approval", request_id)
     )
     conn.commit()
     conn.close()
@@ -251,7 +251,7 @@ def send_notification(
     employee_id: str,
     message: str,
     request_id: Optional[str] = None,
-    db_path: str = DB_PATH
+    db_path: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Simulates sending an employee notification by writing an entry to the notifications table.
