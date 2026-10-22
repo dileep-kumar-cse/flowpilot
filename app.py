@@ -4,14 +4,14 @@ Main Streamlit Application Entry Point.
 """
 
 import streamlit as st
-from db.database import init_db, get_db_connection
-from db.seed import seed_database
+from db.database import get_db_connection
+from db.seed import ensure_database, seed_database
 from ui.employee_view import render_employee_view
 from ui.approver_view import render_approver_view
 from ui.audit_view import render_audit_view
 
-# Initialize database schema if not present
-init_db()
+# Initialize schema and seed sample data on first startup.
+ensure_database()
 
 # Page configuration
 st.set_page_config(

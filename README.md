@@ -150,8 +150,10 @@ USE_OLLAMA_FALLBACK=false
 ```
 *(Note: `.env` is ignored by `.gitignore` and is never committed).*
 
-### 4. Seed the Database
-Initialize tables and sample employees, budgets, and balances:
+### 4. Database initialization
+The Streamlit app creates its SQLite database, schema, and sample employees,
+budgets, and balances automatically the first time it starts. To seed the
+database manually instead:
 ```powershell
 python -m db.seed
 ```
@@ -192,14 +194,15 @@ python cli.py --request 'Purchase 1 ergonomic chair for $500' --action reject --
 
 ## 🧪 Running Automated Tests
 
-Run the full test suite with verbose output:
+Run the full test suite with verbose output (workflow tests use a deterministic
+local classifier mock and do not call Gemini):
 ```powershell
-pytest tests/ -v
+python -m pytest tests/ -v
 ```
 
-### Test Coverage Highlights (22 Tests Passing):
+### Test Coverage Highlights:
 - **Phase 1 (`tests/test_phase1.py`)**: Database schema, foreign key relations, seed idempotency, balance checks, and budget tools.
-- **Phase 2 (`tests/test_phase2.py`)**: LLM leave extraction, approval pause, approval deduction, rejection routing.
+- **Phase 2 (`tests/test_phase2.py`)**: Leave extraction, approval pause, approval deduction, rejection routing.
 - **Phase 3 (`tests/test_phase3.py`)**: Purchase extraction, finance budget validation, budget deduction, insufficient funds handling.
 - **Phase 5 (`tests/test_phase5_error_handling.py`)**: JSON markdown parsing, rate-limit fallback, non-existent employee/department checks, unknown request routing.
 
@@ -225,6 +228,7 @@ FlowPilot/
 │   ├── approver_view.py # Human-in-the-loop review dashboard (Approve/Reject)
 │   └── audit_view.py    # Step-by-step audit log and reasoning viewer
 ├── tests/
+│   ├── conftest.py       # Deterministic LLM classifier mock
 │   ├── __init__.py
 │   ├── test_phase1.py   # Database and mock tool tests
 │   ├── test_phase2.py   # Leave workflow tests
@@ -237,6 +241,10 @@ FlowPilot/
 ├── .gitignore           # Git ignore protecting .env, DB, venv, and caches
 └── README.md            # Architecture, documentation, and quickstart guide
 ```
+
+## 🤖 AI Assistance
+
+This project was built with AI assistance.
 
 ---
 

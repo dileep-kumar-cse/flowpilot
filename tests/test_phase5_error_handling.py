@@ -20,7 +20,6 @@ def setup_test_db(monkeypatch):
     gc.collect()
 
     monkeypatch.setenv("FLOWPILOT_DB_PATH", TEST_DB)
-    monkeypatch.setenv("FLOWPILOT_TEST_MODE", "true")
 
     if os.path.exists(TEST_DB):
         try:

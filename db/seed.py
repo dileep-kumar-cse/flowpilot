@@ -3,7 +3,19 @@ FlowPilot Database Seeder
 Populates initial sample data for employees, leave balances, and departmental budgets.
 """
 
+import os
+from typing import Optional
+
 from db.database import get_db_connection, init_db, DB_PATH
+
+
+def ensure_database(db_path: Optional[str] = None) -> None:
+    """Initialize the database and seed sample data when the file is missing."""
+    target_path = db_path or os.environ.get("FLOWPILOT_DB_PATH") or DB_PATH
+    if os.path.exists(target_path):
+        init_db(target_path)
+    else:
+        seed_database(target_path)
 
 
 def seed_database(db_path: str = DB_PATH) -> None:
