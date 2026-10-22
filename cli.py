@@ -1,8 +1,7 @@
 """
 FlowPilot CLI Interface
 Interactive CLI tool for testing and demonstrating FlowPilot autonomous workflows.
-Supports both interactive prompts and command-line flags.
-Windows-safe unicode handling.
+Supports both Leave and Purchase workflows, interactive prompts, and command-line flags.
 """
 
 import sys
@@ -14,7 +13,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from db.database import get_db_connection, DB_PATH
-from agent.graph import run_leave_workflow, resume_workflow
+from agent.graph import run_workflow, resume_workflow
 
 
 def print_separator(title: str = ""):
@@ -63,16 +62,19 @@ def main():
 
     print_separator("FLOWPILOT AUTONOMOUS WORKFLOW AGENT")
     print("Welcome to FlowPilot CLI!")
-    print("Test multi-step workflows with AI classification and human-in-the-loop approvals.\n")
+    print("Supports multi-step workflows with AI classification and human-in-the-loop approvals:")
+    print(" 1. Leave Request:    Employee -> Manager Approval -> HR Balance Check -> Notification")
+    print(" 2. Purchase Request: Employee -> Manager Approval -> Finance Budget Check -> Notification\n")
 
     employee_id = args.employee
-    default_prompt = "I need 2 days annual leave from Nov 5 for a family vacation."
+    default_prompt = "Purchase 2 Dell UltraSharp monitors for $800"
 
     if args.request:
         user_input = args.request
     else:
         print(f"Active Employee: {employee_id} (Alice Smith - Engineering)")
-        print(f"Default request: \"{default_prompt}\"")
+        print(f"Sample 1: \"I need 2 days annual leave from Nov 5 for a family vacation.\"")
+        print(f"Sample 2: \"{default_prompt}\"")
         try:
             user_input = input("\nEnter your request (press Enter for default): ").strip()
         except EOFError:
@@ -82,7 +84,7 @@ def main():
 
     print_separator("STEP 1 & 2: AGENT CLASSIFICATION & APPROVAL PAUSE")
     print(f"Submitting: '{user_input}'...")
-    state = run_leave_workflow(raw_text=user_input, employee_id=employee_id)
+    state = run_workflow(raw_text=user_input, employee_id=employee_id)
 
     req_id = state["request_id"]
     print(f"\n[OK] Request Created: {req_id}")
@@ -107,14 +109,14 @@ def main():
                 choice = "A"
             if choice == "R":
                 try:
-                    comment = input("Enter rejection reason (default: Project deadline): ").strip() or "Project deadline"
+                    comment = input("Enter rejection reason (default: Budget cut / not urgent): ").strip() or "Budget cut / not urgent"
                 except EOFError:
-                    comment = "Project deadline"
+                    comment = "Budget cut / not urgent"
             else:
                 try:
-                    comment = input("Enter approval comment (default: Approved, enjoy!): ").strip() or "Approved, enjoy!"
+                    comment = input("Enter approval comment (default: Approved by manager): ").strip() or "Approved by manager"
                 except EOFError:
-                    comment = "Approved, enjoy!"
+                    comment = "Approved by manager"
 
         if choice == "R":
             print(f"\nResuming workflow with REJECTION ({comment})...")
@@ -135,7 +137,7 @@ def main():
         show_audit_logs(req_id)
         show_notifications(employee_id)
 
-    print_separator("PHASE 2 CLI DEMO COMPLETE")
+    print_separator("WORKFLOW COMPLETE")
 
 
 if __name__ == "__main__":

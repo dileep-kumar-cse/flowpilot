@@ -82,7 +82,11 @@ def extract_fallback_rules(text: str, employee_dept: str = "Engineering") -> Dic
     # Check for purchase keywords
     if any(k in text_lower for k in ["buy", "purchase", "order", "laptop", "monitor", "software", "license", "$"]):
         amount = 0.0
-        amount_match = re.search(r"\$?\s*(\d+(?:,\d+)?(?:\.\d+)?)", text)
+        amount_match = re.search(r"\$\s*(\d+(?:,\d+)?(?:\.\d+)?)", text)
+        if not amount_match:
+            amount_match = re.search(r"(?:costing|cost|price|for)\s+\$?\s*(\d+(?:,\d+)?(?:\.\d+)?)", text, re.IGNORECASE)
+        if not amount_match:
+            amount_match = re.search(r"(\d+(?:,\d+)?(?:\.\d+)?)\s*(?:usd|dollars)", text, re.IGNORECASE)
         if amount_match:
             amount = float(amount_match.group(1).replace(",", ""))
             
