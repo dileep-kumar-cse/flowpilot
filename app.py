@@ -44,13 +44,13 @@ with st.sidebar:
     st.caption("Workflows, moving forward.")
 
     pending_count = get_pending_count()
-    approver_label = f"🛡️ Approver Dashboard ({pending_count})" if pending_count > 0 else "🛡️ Approver Dashboard"
+    st.caption(f"⏳ {pending_count} pending approvals")
 
     nav_selection = st.radio(
         "Navigate",
         [
             "👤 Employee Portal",
-            approver_label,
+            "🛡️ Approver Dashboard",
             "📜 Audit & Reasoning Trail"
         ],
         index=0

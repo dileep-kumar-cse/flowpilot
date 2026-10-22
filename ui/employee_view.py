@@ -10,6 +10,7 @@ import streamlit as st
 from agent.graph import run_workflow
 from agent.tools import check_leave_balance
 from db.database import get_db_connection
+from ui.styles import render_request_timeline, render_status_badge
 
 
 def render_employee_view():
@@ -71,10 +72,12 @@ def render_employee_view():
                     )
 
                 status = state.get("status")
+                st.toast("Request submitted to FlowPilot.")
                 if status == "pending_approval":
                     st.success(f"Request submitted for approval. Request ID: {state['request_id']}")
                 elif status in ("completed", "approved"):
                     st.success(f"Request processed successfully. Request ID: {state['request_id']}")
+                    st.balloons()
                 else:
                     st.error(
                         f"Request could not be completed: "
@@ -112,44 +115,17 @@ def render_employee_view():
         else:
             for request in requests:
                 status = request["status"]
-                if status == "pending_approval":
-                    badge = "🟡 Pending"
-                elif status in ("approved", "completed"):
-                    badge = "🟢 Approved"
-                elif status == "rejected":
-                    badge = "🔴 Rejected"
-                else:
-                    badge = f"🔴 {status.replace('_', ' ').title()}"
 
                 with st.container(border=True):
-                    st.markdown(f"**{request['workflow_type'].title()} request** · {badge}")
+                    st.markdown(f"**{request['workflow_type'].title()} request**")
+                    render_status_badge(status)
                     st.caption(f"Request ID: {request['id']} · Submitted: {request['created_at']}")
                     st.write(request["raw_text"])
-
-                    downstream = "HR" if request["workflow_type"] == "leave" else "Finance"
-                    terminal = request["current_step"] == "completed"
-                    is_supported_workflow = request["workflow_type"] in ("leave", "purchase")
-                    manager_done = is_supported_workflow and status != "pending_approval"
-                    downstream_done = is_supported_workflow and (
-                        (terminal and status != "failed")
-                        or (
-                            status != "failed"
-                            and request["current_step"] in (
-                                "hr_balance_check",
-                                "finance_budget_check",
-                            )
-                        )
+                    render_request_timeline(
+                        request["workflow_type"],
+                        status,
+                        request["current_step"],
                     )
-                    steps = [
-                        ("Submitted", True),
-                        ("Manager", manager_done),
-                        (downstream, downstream_done),
-                        ("Done", terminal),
-                    ]
-                    timeline_columns = st.columns(len(steps))
-                    for column, (label, complete) in zip(timeline_columns, steps):
-                        icon = "🟢" if complete else "⚪"
-                        column.markdown(f"{icon} **{label}**")
                     st.caption(f"Last updated: {request['updated_at']}")
 
         if notifications:

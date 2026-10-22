@@ -10,6 +10,7 @@ import streamlit as st
 
 from agent.graph import resume_workflow
 from db.database import get_db_connection
+from ui.styles import render_request_timeline, render_status_badge
 
 
 def render_approver_view():
@@ -91,10 +92,12 @@ def render_approver_view():
 
             with st.container(border=True):
                 st.markdown(f"**{item['employee_name']}** · {item['employee_dept']}")
+                render_status_badge("pending_approval")
                 st.caption(
                     f"{workflow_type.title()} · Request {request_id} · "
                     f"Awaiting {item['approver_role']} since {item['requested_at']}"
                 )
+                render_request_timeline(workflow_type, "pending_approval", "manager_approval")
                 st.write(item["raw_text"])
                 if workflow_type == "leave":
                     st.write(
@@ -121,17 +124,22 @@ def render_approver_view():
                     type="primary",
                     use_container_width=True,
                 ):
-                    with st.spinner("Processing approval..."):
+                    with st.spinner("FlowPilot is processing..."):
                         final_state = resume_workflow(
                             request_id=request_id,
                             decision="APPROVED",
                             comments=comment.strip() or "Approved by manager",
                             approver_id=selected_approver_id,
                         )
-                    st.success(
-                        f"Request {request_id} processed with status "
-                        f"{final_state['status']}."
-                    )
+                    st.toast(f"Request {request_id} approved.")
+                    if final_state["status"] == "completed":
+                        st.success(f"Request {request_id} approved and completed.")
+                        st.balloons()
+                    else:
+                        st.error(
+                            f"Request {request_id} could not be completed: "
+                            f"{final_state.get('error_message') or final_state['status']}."
+                        )
                     st.rerun()
 
                 if reject_column.button(
@@ -139,17 +147,15 @@ def render_approver_view():
                     key=f"reject_{request_id}",
                     use_container_width=True,
                 ):
-                    with st.spinner("Processing rejection..."):
+                    with st.spinner("FlowPilot is processing..."):
                         final_state = resume_workflow(
                             request_id=request_id,
                             decision="REJECTED",
                             comments=comment.strip() or "Rejected by manager",
                             approver_id=selected_approver_id,
                         )
-                    st.error(
-                        f"Request {request_id} processed with status "
-                        f"{final_state['status']}."
-                    )
+                    st.toast(f"Request {request_id} rejected.")
+                    st.error(f"Request {request_id} rejected.")
                     st.rerun()
 
     with st.expander("Recent approval history"):

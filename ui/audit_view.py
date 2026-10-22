@@ -102,8 +102,7 @@ def render_audit_view():
                     icon = icons.get(log["actor"], "⚙️")
                 with st.container(border=True):
                     st.markdown(
-                        f"**{icon} {log['step_name']}** "
-                        f"· {log['actor']}"
+                        f"**{icon} {log['step_name']}** · {log['actor']}"
                     )
                     st.caption(
                         f"{log['timestamp']} · {log['action']} · "
