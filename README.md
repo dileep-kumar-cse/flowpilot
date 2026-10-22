@@ -222,11 +222,14 @@ FlowPilot/
 │   ├── __init__.py
 │   ├── database.py      # SQLite schema, connection factory, and audit logging
 │   └── seed.py          # Sample data: employees, leave balances, budgets
+├── .streamlit/
+│   └── config.toml      # Light Streamlit theme
 ├── ui/
 │   ├── __init__.py
 │   ├── employee_view.py # Employee submission portal & request tracker
 │   ├── approver_view.py # Human-in-the-loop review dashboard (Approve/Reject)
-│   └── audit_view.py    # Step-by-step audit log and reasoning viewer
+│   ├── audit_view.py    # Audit trail, analytics, and company status viewer
+│   └── styles.py        # Shared interface styling
 ├── tests/
 │   ├── conftest.py       # Deterministic LLM classifier mock
 │   ├── __init__.py

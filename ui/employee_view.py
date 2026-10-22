@@ -1,146 +1,159 @@
 """
-FlowPilot Employee Portal View
-Allows employees to submit natural language workflow requests, track statuses,
-and view in-app notifications.
+FlowPilot Employee Portal
+Allows employees to submit requests and track their status.
 """
 
-import json
+from contextlib import closing
+
 import streamlit as st
-from db.database import get_db_connection
+
 from agent.graph import run_workflow
 from agent.tools import check_leave_balance
+from db.database import get_db_connection
 
 
 def render_employee_view():
-    st.markdown("### 👤 Employee Portal")
-    st.caption("Submit business requests in plain English. FlowPilot AI will classify, route, and orchestrate approvals.")
+    st.markdown("### Employee Portal")
+    st.caption("Submit a request in plain English, or check the progress of one you have already submitted.")
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, name, department, role FROM employees ORDER BY id ASC")
-    employees = cursor.fetchall()
-    conn.close()
+    with closing(get_db_connection()) as conn:
+        employees = conn.execute(
+            "SELECT id, name, department, role FROM employees ORDER BY id ASC"
+        ).fetchall()
 
-    emp_options = {f"{e['id']} - {e['name']} ({e['department']} {e['role']})": e['id'] for e in employees}
-    selected_label = st.selectbox("Select Active Employee:", list(emp_options.keys()), index=3) # Default EMP001 (Alice)
+    emp_options = {
+        f"{employee['id']} - {employee['name']} ({employee['department']} {employee['role']})": employee["id"]
+        for employee in employees
+    }
+    selected_label = st.selectbox(
+        "Active employee",
+        list(emp_options),
+        index=0,
+    )
     selected_emp_id = emp_options[selected_label]
 
-    # Show employee balance & department context
-    bal_res = check_leave_balance(selected_emp_id)
-    if bal_res.get("success"):
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("🌴 Annual Leave", f"{bal_res['annual_leave']} days")
-        c2.metric("🩺 Sick Leave", f"{bal_res['sick_leave']} days")
-        c3.metric("☕ Casual Leave", f"{bal_res['casual_leave']} days")
-        c4.metric("📊 Total Available", f"{bal_res['total_available']} days")
+    balance = check_leave_balance(selected_emp_id)
+    if balance.get("success"):
+        columns = st.columns(4)
+        columns[0].metric("Annual leave", f"{balance['annual_leave']} days")
+        columns[1].metric("Sick leave", f"{balance['sick_leave']} days")
+        columns[2].metric("Casual leave", f"{balance['casual_leave']} days")
+        columns[3].metric("Total available", f"{balance['total_available']} days")
 
-    st.markdown("---")
+    new_request, my_requests_tab = st.tabs(["New Request", "My Requests"])
 
-    # Quick prompt presets
-    st.markdown("##### ⚡ Quick Templates")
-    col1, col2, col3 = st.columns(3)
-    preset_text = None
-    if col1.button("🏖️ 3 Days Annual Leave"):
-        preset_text = "I need 3 days annual leave from Nov 15 for personal travel."
-    if col2.button("💻 Purchase 2 Monitors ($800)"):
-        preset_text = "Purchase 2 Dell UltraSharp 4K monitors for $800 for the lab."
-    if col3.button("🩺 2 Days Sick Leave"):
-        preset_text = "I need 2 days sick leave starting tomorrow due to flu."
+    with new_request:
+        st.markdown("#### Quick templates")
+        template_columns = st.columns(3)
+        preset_text = None
+        if template_columns[0].button("3 days annual leave"):
+            preset_text = "I need 3 days annual leave from Nov 15 for personal travel."
+        if template_columns[1].button("2 monitors ($800)"):
+            preset_text = "Purchase 2 Dell UltraSharp 4K monitors for $800 for the lab."
+        if template_columns[2].button("2 days sick leave"):
+            preset_text = "I need 2 days sick leave starting tomorrow due to flu."
 
-    default_input = preset_text if preset_text else ""
-    user_input = st.text_area(
-        "Describe your request in natural language:",
-        value=default_input,
-        placeholder="e.g. 'I need 2 days casual leave starting Monday' or 'Purchase 1 ergonomic chair for $350'",
-        height=90
-    )
-
-    if st.button("🚀 Submit to FlowPilot Agent", type="primary", use_container_width=True):
-        if not user_input.strip():
-            st.warning("Please enter a request description.")
-        else:
-            with st.spinner("🤖 FlowPilot Agent is reasoning, classifying, and orchestrating workflow..."):
-                state = run_workflow(raw_text=user_input.strip(), employee_id=selected_emp_id)
-                st.session_state["last_submission"] = state
-
-    # Display last submission result card if available
-    if "last_submission" in st.session_state:
-        sub = st.session_state["last_submission"]
-        st.markdown("---")
-        st.markdown("#### 🤖 Agent Execution Result")
-        
-        status = sub.get("status", "draft")
-        status_color = {
-            "pending_approval": "orange",
-            "completed": "green",
-            "approved": "blue",
-            "rejected": "red",
-            "failed": "red"
-        }.get(status, "gray")
-
-        st.markdown(
-            f"""
-            <div style="padding:15px; border-radius:10px; border:1px solid #ddd; background-color:#f9fafb; margin-bottom:15px;">
-                <h4 style="margin:0; color:#111;">Request ID: <code>{sub.get('request_id')}</code></h4>
-                <p style="margin:5px 0;"><b>Workflow Type:</b> <span style="text-transform:uppercase; font-weight:bold;">{sub.get('workflow_type')}</span> | 
-                <b>Current Step:</b> <code>{sub.get('current_step')}</code> | 
-                <b>Status:</b> <span style="color:{status_color}; font-weight:bold; text-transform:uppercase;">{status}</span></p>
-            </div>
-            """,
-            unsafe_allow_html=True
+        user_input = st.text_area(
+            "Describe your request",
+            value=preset_text or "",
+            placeholder="For example: I need 2 days casual leave starting Monday",
+            height=100,
         )
 
-        with st.expander("🔍 View Agent Extracted Data & Reasoning", expanded=True):
-            st.json(sub.get("extracted_data", {}))
+        if st.button("Submit request", type="primary", use_container_width=True):
+            if not user_input.strip():
+                st.error("Please enter a request description.")
+            else:
+                with st.spinner("FlowPilot is processing..."):
+                    state = run_workflow(
+                        raw_text=user_input.strip(),
+                        employee_id=selected_emp_id,
+                    )
 
-    # Request History & In-App Notifications
-    st.markdown("---")
-    tab_history, tab_notifs = st.tabs(["📋 My Request History", "🔔 My Notifications"])
+                status = state.get("status")
+                if status == "pending_approval":
+                    st.success(f"Request submitted for approval. Request ID: {state['request_id']}")
+                elif status in ("completed", "approved"):
+                    st.success(f"Request processed successfully. Request ID: {state['request_id']}")
+                else:
+                    st.error(
+                        f"Request could not be completed: "
+                        f"{state.get('error_message') or status or 'Unknown status'}"
+                    )
+                with st.expander("Request details"):
+                    st.write(f"**Request ID:** {state.get('request_id', 'N/A')}")
+                    st.write(f"**Workflow:** {state.get('workflow_type', 'unknown').title()}")
+                    st.write(f"**Current step:** {state.get('current_step', 'N/A')}")
+                    st.json(state.get("extracted_data", {}))
 
-    with tab_history:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT id, workflow_type, raw_text, current_step, status, created_at, updated_at
-            FROM requests
-            WHERE employee_id = ?
-            ORDER BY created_at DESC
-            """,
-            (selected_emp_id,)
-        )
-        my_requests = cursor.fetchall()
-        conn.close()
+    with my_requests_tab:
+        with closing(get_db_connection()) as conn:
+            requests = conn.execute(
+                """
+                SELECT id, workflow_type, raw_text, current_step, status, created_at, updated_at
+                FROM requests
+                WHERE employee_id = ?
+                ORDER BY created_at DESC
+                """,
+                (selected_emp_id,),
+            ).fetchall()
+            notifications = conn.execute(
+                """
+                SELECT id, message, created_at
+                FROM notifications
+                WHERE employee_id = ?
+                ORDER BY created_at DESC
+                """,
+                (selected_emp_id,),
+            ).fetchall()
 
-        if not my_requests:
+        if not requests:
             st.info("No requests submitted yet.")
         else:
-            for req in my_requests:
-                color = "orange" if "pending" in req["status"] else ("green" if req["status"] == "completed" else "red")
-                with st.expander(f"📌 {req['id']} | {req['workflow_type'].upper()} | {req['created_at']}"):
-                    st.write(f"**Request:** {req['raw_text']}")
-                    st.markdown(f"**Status:** :{color}[**{req['status'].upper()}**] (Step: `{req['current_step']}`)")
-                    st.caption(f"Last updated: {req['updated_at']}")
+            for request in requests:
+                status = request["status"]
+                if status == "pending_approval":
+                    badge = "🟡 Pending"
+                elif status in ("approved", "completed"):
+                    badge = "🟢 Approved"
+                elif status == "rejected":
+                    badge = "🔴 Rejected"
+                else:
+                    badge = f"🔴 {status.replace('_', ' ').title()}"
 
-    with tab_notifs:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT id, message, created_at, is_read
-            FROM notifications
-            WHERE employee_id = ?
-            ORDER BY created_at DESC
-            """,
-            (selected_emp_id,)
-        )
-        notifs = cursor.fetchall()
-        conn.close()
+                with st.container(border=True):
+                    st.markdown(f"**{request['workflow_type'].title()} request** · {badge}")
+                    st.caption(f"Request ID: {request['id']} · Submitted: {request['created_at']}")
+                    st.write(request["raw_text"])
 
-        if not notifs:
-            st.info("No notifications received.")
-        else:
-            for n in notifs:
-                st.markdown(f"💬 **{n['message']}**")
-                st.caption(f"Time: {n['created_at']} | Notification #{n['id']}")
-                st.divider()
+                    downstream = "HR" if request["workflow_type"] == "leave" else "Finance"
+                    terminal = request["current_step"] == "completed"
+                    is_supported_workflow = request["workflow_type"] in ("leave", "purchase")
+                    manager_done = is_supported_workflow and status != "pending_approval"
+                    downstream_done = is_supported_workflow and (
+                        (terminal and status != "failed")
+                        or (
+                            status != "failed"
+                            and request["current_step"] in (
+                                "hr_balance_check",
+                                "finance_budget_check",
+                            )
+                        )
+                    )
+                    steps = [
+                        ("Submitted", True),
+                        ("Manager", manager_done),
+                        (downstream, downstream_done),
+                        ("Done", terminal),
+                    ]
+                    timeline_columns = st.columns(len(steps))
+                    for column, (label, complete) in zip(timeline_columns, steps):
+                        icon = "🟢" if complete else "⚪"
+                        column.markdown(f"{icon} **{label}**")
+                    st.caption(f"Last updated: {request['updated_at']}")
+
+        if notifications:
+            with st.expander("Notifications"):
+                for notification in notifications:
+                    st.write(f"💬 {notification['message']}")
+                    st.caption(f"{notification['created_at']} · Notification #{notification['id']}")
