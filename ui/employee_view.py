@@ -9,29 +9,20 @@ import streamlit as st
 
 from agent.graph import run_workflow
 from agent.tools import check_leave_balance
-from db.database import get_db_connection
+from db.database import get_db_connection, log_audit
+from ui.auth import has_page_access
 from ui.styles import render_request_timeline, render_status_badge
 
 
 def render_employee_view():
+    user = st.session_state.get("user")
+    if not user or not has_page_access(user.get("role", ""), "👤 Employee Portal"):
+        st.error("The Employee Portal is available to employee accounts only.")
+        return
+
+    selected_emp_id = user["employee_id"]
     st.markdown("### Employee Portal")
     st.caption("Submit a request in plain English, or check the progress of one you have already submitted.")
-
-    with closing(get_db_connection()) as conn:
-        employees = conn.execute(
-            "SELECT id, name, department, role FROM employees ORDER BY id ASC"
-        ).fetchall()
-
-    emp_options = {
-        f"{employee['id']} - {employee['name']} ({employee['department']} {employee['role']})": employee["id"]
-        for employee in employees
-    }
-    selected_label = st.selectbox(
-        "Active employee",
-        list(emp_options),
-        index=0,
-    )
-    selected_emp_id = emp_options[selected_label]
 
     balance = check_leave_balance(selected_emp_id)
     if balance.get("success"):
@@ -72,6 +63,14 @@ def render_employee_view():
                     )
 
                 status = state.get("status")
+                if state.get("request_id"):
+                    log_audit(
+                        request_id=state["request_id"],
+                        step_name="Employee Request",
+                        actor=user["username"],
+                        action="SUBMIT_REQUEST",
+                        details={"employee_id": selected_emp_id},
+                    )
                 st.toast("Request submitted to FlowPilot.")
                 if status == "pending_approval":
                     st.success(f"Request submitted for approval. Request ID: {state['request_id']}")

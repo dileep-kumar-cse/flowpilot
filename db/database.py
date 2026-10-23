@@ -40,6 +40,17 @@ def init_db(db_path: Optional[str] = None) -> None:
     );
     """)
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('employee', 'manager', 'hr', 'finance')),
+        employee_id TEXT NOT NULL,
+        FOREIGN KEY (employee_id) REFERENCES employees (id)
+    );
+    """)
+
     # 2. Leave balances table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS leave_balances (
@@ -89,9 +100,15 @@ def init_db(db_path: Optional[str] = None) -> None:
         comments TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         decided_at TIMESTAMP,
+        approver_username TEXT,
         FOREIGN KEY (request_id) REFERENCES requests (id)
     );
     """)
+    approval_columns = {
+        row["name"] for row in cursor.execute("PRAGMA table_info(approvals)").fetchall()
+    }
+    if "approver_username" not in approval_columns:
+        cursor.execute("ALTER TABLE approvals ADD COLUMN approver_username TEXT")
 
     # 6. Audit log table
     cursor.execute("""

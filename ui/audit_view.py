@@ -8,44 +8,77 @@ from contextlib import closing
 import streamlit as st
 
 from db.database import get_db_connection
+from ui.auth import has_page_access
 
 
 def render_audit_view():
+    user = st.session_state.get("user")
+    if not user or not has_page_access(user.get("role", ""), "📜 Audit & Reasoning Trail"):
+        st.error("The audit trail is available to authenticated accounts only.")
+        return
+
+    is_employee = user["role"] == "employee"
+    employee_filter = " WHERE employee_id = ?" if is_employee else ""
+    employee_params = (user["employee_id"],) if is_employee else ()
     st.markdown("### Audit & Reasoning Trail")
     st.caption("Review workflow events, their timestamps, and request activity.")
 
     with closing(get_db_connection()) as conn:
-        total_requests = conn.execute("SELECT COUNT(*) FROM requests").fetchone()[0]
+        total_requests = conn.execute(
+            f"SELECT COUNT(*) FROM requests{employee_filter}",
+            employee_params,
+        ).fetchone()[0]
         pending_requests = conn.execute(
-            "SELECT COUNT(*) FROM requests WHERE status = 'pending_approval'"
+            f"SELECT COUNT(*) FROM requests{employee_filter}"
+            f"{' AND' if is_employee else ' WHERE'} status = 'pending_approval'",
+            employee_params,
         ).fetchone()[0]
         completed_requests = conn.execute(
-            "SELECT COUNT(*) FROM requests WHERE status = 'completed'"
+            f"SELECT COUNT(*) FROM requests{employee_filter}"
+            f"{' AND' if is_employee else ' WHERE'} status = 'completed'",
+            employee_params,
         ).fetchone()[0]
         unsuccessful_requests = conn.execute(
-            "SELECT COUNT(*) FROM requests WHERE status IN ('rejected', 'failed')"
+            f"SELECT COUNT(*) FROM requests{employee_filter}"
+            f"{' AND' if is_employee else ' WHERE'} status IN ('rejected', 'failed')",
+            employee_params,
         ).fetchone()[0]
         request_ids = [
             row[0]
             for row in conn.execute(
-                "SELECT id FROM requests ORDER BY created_at DESC"
+                f"SELECT id FROM requests{employee_filter} ORDER BY created_at DESC",
+                employee_params,
             ).fetchall()
         ]
         requests_by_type = conn.execute(
-            "SELECT workflow_type, COUNT(*) AS count FROM requests GROUP BY workflow_type"
+            f"""
+            SELECT workflow_type, COUNT(*) AS count FROM requests
+            {employee_filter}
+            GROUP BY workflow_type
+            """,
+            employee_params,
         ).fetchall()
         requests_by_status = conn.execute(
-            "SELECT status, COUNT(*) AS count FROM requests GROUP BY status"
+            f"""
+            SELECT status, COUNT(*) AS count FROM requests
+            {employee_filter}
+            GROUP BY status
+            """,
+            employee_params,
         ).fetchall()
-        budgets = conn.execute(
+        budgets = [] if is_employee else conn.execute(
             "SELECT department, total_budget, spent_budget, remaining_budget FROM budgets"
         ).fetchall()
-        balances = conn.execute(
-            """
+        balance_query = """
             SELECT e.id, e.name, e.department, b.annual_leave, b.sick_leave, b.casual_leave
             FROM employees e
             JOIN leave_balances b ON e.id = b.employee_id
-            """
+        """
+        if is_employee:
+            balance_query += " WHERE e.id = ?"
+        balances = conn.execute(
+            balance_query,
+            (user["employee_id"],) if is_employee else (),
         ).fetchall()
 
     metrics = st.columns(4)
@@ -63,14 +96,18 @@ def render_audit_view():
         )
 
         query = """
-            SELECT id, request_id, step_name, actor, action, details, timestamp
+            SELECT audit_log.id, audit_log.request_id, audit_log.step_name,
+                   audit_log.actor, audit_log.action, audit_log.details, audit_log.timestamp
             FROM audit_log
+            JOIN requests ON requests.id = audit_log.request_id
         """
-        params = []
+        query += " WHERE requests.employee_id = ?" if is_employee else ""
+        params = [user["employee_id"]] if is_employee else []
         if selected_request != "All requests":
-            query += " WHERE request_id = ?"
+            query += " AND" if is_employee else " WHERE"
+            query += " audit_log.request_id = ?"
             params.append(selected_request)
-        query += " ORDER BY id DESC LIMIT 100"
+        query += " ORDER BY audit_log.id DESC LIMIT 100"
 
         with closing(get_db_connection()) as conn:
             logs = conn.execute(query, params).fetchall()
@@ -132,22 +169,26 @@ def render_audit_view():
             st.bar_chart(status_data)
 
     st.markdown("#### Department budgets and leave balances")
-    budgets_tab, balances_tab = st.tabs(["Department budgets", "Leave balances"])
+    if is_employee:
+        balances_tab = st.tabs(["My leave balances"])[0]
+    else:
+        budgets_tab, balances_tab = st.tabs(["Department budgets", "Leave balances"])
 
-    with budgets_tab:
-        for budget in budgets:
-            percentage = (
-                budget["spent_budget"] / budget["total_budget"]
-                if budget["total_budget"] > 0
-                else 0.0
-            )
-            st.write(
-                f"**{budget['department']}** · "
-                f"${budget['spent_budget']:,.2f} spent of "
-                f"${budget['total_budget']:,.2f} · "
-                f"${budget['remaining_budget']:,.2f} remaining"
-            )
-            st.progress(min(percentage, 1.0))
+    if not is_employee:
+        with budgets_tab:
+            for budget in budgets:
+                percentage = (
+                    budget["spent_budget"] / budget["total_budget"]
+                    if budget["total_budget"] > 0
+                    else 0.0
+                )
+                st.write(
+                    f"**{budget['department']}** · "
+                    f"${budget['spent_budget']:,.2f} spent of "
+                    f"${budget['total_budget']:,.2f} · "
+                    f"${budget['remaining_budget']:,.2f} remaining"
+                )
+                st.progress(min(percentage, 1.0))
 
     with balances_tab:
         st.dataframe(

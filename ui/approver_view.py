@@ -10,80 +10,108 @@ import streamlit as st
 
 from agent.graph import resume_workflow
 from db.database import get_db_connection
+from ui.auth import has_page_access
 from ui.styles import render_request_timeline, render_status_badge
 
 
 def render_approver_view():
-    st.markdown("### Approver Dashboard")
-    st.caption("Review pending requests and record an approval decision.")
+    user = st.session_state.get("user")
+    if not user or not has_page_access(user.get("role", ""), "🛡️ Approver Dashboard"):
+        st.error("The Approver Dashboard is available to approver accounts only.")
+        return
+
+    role = user["role"]
+    if role == "manager":
+        st.markdown("### Approver Dashboard")
+        st.caption("Review requests assigned to the Manager role.")
+    else:
+        st.markdown(f"### {role.upper()} Check Queue")
+        st.caption(f"Requests waiting on the {role.upper()} check.")
 
     with closing(get_db_connection()) as conn:
-        approvers = conn.execute(
-            """
-            SELECT id, name, department, role
-            FROM employees
-            WHERE role IN ('Manager', 'HR', 'Finance')
-            ORDER BY id ASC
-            """
-        ).fetchall()
-        counts = conn.execute(
-            """
-            SELECT
-                SUM(CASE WHEN status = 'pending_approval' THEN 1 ELSE 0 END) AS pending,
-                SUM(CASE WHEN status IN ('approved', 'completed') THEN 1 ELSE 0 END) AS approved,
-                SUM(CASE WHEN status IN ('rejected', 'failed') THEN 1 ELSE 0 END) AS rejected
-            FROM requests
-            """
-        ).fetchone()
-        pending_items = conn.execute(
-            """
-            SELECT
-                a.request_id,
-                a.approver_role,
-                a.created_at AS requested_at,
-                r.workflow_type,
-                r.raw_text,
-                r.structured_data,
-                e.name AS employee_name,
-                e.department AS employee_dept
-            FROM approvals a
-            JOIN requests r ON a.request_id = r.id
-            JOIN employees e ON r.employee_id = e.id
-            WHERE a.decision = 'PENDING'
-            ORDER BY a.created_at ASC
-            """
-        ).fetchall()
-        history = conn.execute(
-            """
-            SELECT a.request_id, a.decision, a.comments, a.decided_at,
-                   e.name AS approver_name
-            FROM approvals a
-            LEFT JOIN employees e ON a.approver_id = e.id
-            WHERE a.decision != 'PENDING'
-            ORDER BY a.decided_at DESC
-            LIMIT 10
-            """
-        ).fetchall()
+        if role == "manager":
+            counts = conn.execute(
+                """
+                SELECT
+                    SUM(CASE WHEN a.decision = 'PENDING' THEN 1 ELSE 0 END) AS pending,
+                    SUM(CASE WHEN a.decision = 'APPROVED' THEN 1 ELSE 0 END) AS approved,
+                    SUM(CASE WHEN a.decision = 'REJECTED' THEN 1 ELSE 0 END) AS rejected
+                FROM approvals a
+                WHERE a.approver_role = ?
+                """,
+                ("Manager",),
+            ).fetchone()
+            pending_items = conn.execute(
+                """
+                SELECT
+                    a.request_id,
+                    a.approver_role,
+                    a.created_at AS requested_at,
+                    r.workflow_type,
+                    r.raw_text,
+                    r.structured_data,
+                    e.name AS employee_name,
+                    e.department AS employee_dept
+                FROM approvals a
+                JOIN requests r ON a.request_id = r.id
+                JOIN employees e ON r.employee_id = e.id
+                WHERE a.decision = 'PENDING' AND a.approver_role = ?
+                ORDER BY a.created_at ASC
+                """,
+                ("Manager",),
+            ).fetchall()
+            history = conn.execute(
+                """
+                SELECT a.request_id, a.decision, a.comments, a.decided_at,
+                       COALESCE(a.approver_username, e.name) AS approver_name
+                FROM approvals a
+                LEFT JOIN employees e ON a.approver_id = e.id
+                WHERE a.decision != 'PENDING' AND a.approver_role = ?
+                ORDER BY a.decided_at DESC
+                LIMIT 10
+                """,
+                ("Manager",),
+            ).fetchall()
+            waiting_items = []
+        else:
+            check_step = "hr_balance_check" if role == "hr" else "finance_budget_check"
+            workflow_type = "leave" if role == "hr" else "purchase"
+            waiting_items = conn.execute(
+                """
+                SELECT r.id, r.workflow_type, r.raw_text, r.current_step,
+                       r.created_at, e.name AS employee_name, e.department
+                FROM requests r
+                JOIN employees e ON r.employee_id = e.id
+                WHERE r.current_step = ? AND r.workflow_type = ?
+                  AND r.status NOT IN ('completed', 'rejected', 'failed')
+                ORDER BY r.created_at ASC
+                """,
+                (check_step, workflow_type),
+            ).fetchall()
+            pending_items = []
+
+    if role != "manager":
+        if not waiting_items:
+            st.info(f"No requests are currently waiting on the {role.upper()} check.")
+        else:
+            for item in waiting_items:
+                with st.container(border=True):
+                    st.markdown(f"**{item['employee_name']}** · {item['department']}")
+                    st.caption(
+                        f"{item['workflow_type'].title()} · Request {item['id']} · "
+                        f"Waiting since {item['created_at']}"
+                    )
+                    st.write(item["raw_text"])
+        return
 
     metric_columns = st.columns(3)
     metric_columns[0].metric("Pending", counts["pending"] or 0)
     metric_columns[1].metric("Approved", counts["approved"] or 0)
     metric_columns[2].metric("Rejected", counts["rejected"] or 0)
 
-    approver_options = {
-        f"{approver['name']} ({approver['role']} - {approver['department']})": approver["id"]
-        for approver in approvers
-    }
-    if not approver_options:
-        st.warning("No approver profiles are available.")
-        return
-
-    selected_label = st.selectbox("Active approver", list(approver_options))
-    selected_approver_id = approver_options[selected_label]
-
     st.markdown("#### Requests awaiting review")
     if not pending_items:
-        st.success("All caught up. There are no pending approvals.")
+        st.success("All caught up. There are no pending Manager approvals.")
     else:
         for item in pending_items:
             request_id = item["request_id"]
@@ -129,7 +157,8 @@ def render_approver_view():
                             request_id=request_id,
                             decision="APPROVED",
                             comments=comment.strip() or "Approved by manager",
-                            approver_id=selected_approver_id,
+                            approver_id=user["employee_id"],
+                            approver_username=user["username"],
                         )
                     st.toast(f"Request {request_id} approved.")
                     if final_state["status"] == "completed":
@@ -152,7 +181,8 @@ def render_approver_view():
                             request_id=request_id,
                             decision="REJECTED",
                             comments=comment.strip() or "Rejected by manager",
-                            approver_id=selected_approver_id,
+                            approver_id=user["employee_id"],
+                            approver_username=user["username"],
                         )
                     st.toast(f"Request {request_id} rejected.")
                     st.error(f"Request {request_id} rejected.")
