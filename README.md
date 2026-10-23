@@ -152,11 +152,24 @@ USE_OLLAMA_FALLBACK=false
 
 ### 4. Database initialization
 The Streamlit app creates its SQLite database, schema, and sample employees,
-budgets, and balances automatically the first time it starts. To seed the
-database manually instead:
+budgets, balances, and demo login accounts automatically. To seed the database
+manually instead:
 ```powershell
 python -m db.seed
 ```
+
+### Demo accounts
+These local demo accounts are seeded for evaluation. Change their passwords
+before using FlowPilot beyond a local demo.
+
+| Role | Username | Password |
+| :--- | :--- | :--- |
+| Employee | `employee` | `employee123` |
+| Manager | `manager` | `manager123` |
+| HR | `hr` | `hr123` |
+| Finance | `finance` | `finance123` |
+
+Passwords are stored as bcrypt hashes in the SQLite `users` table.
 
 ---
 
@@ -168,9 +181,10 @@ Launch the visual web application:
 streamlit run app.py
 ```
 Open **`http://localhost:8501`** in your browser:
-- **👤 Employee Portal**: Choose an employee, click quick-fill prompt chips or type your own request, and submit.
-- **🛡️ Approver Dashboard**: Switch approver roles (Manager, Finance, HR), review pending requests, and click **Approve** or **Reject**.
-- **📜 Audit & Reasoning Trail**: Inspect live step-by-step agent decisions, LLM parameters, tool calls, and departmental budgets.
+- **👤 Employee Portal**: Submit requests and track only the logged-in employee's requests.
+- **🛡️ Approver Dashboard**: Managers review and decide Manager-role approvals. HR and Finance see only requests waiting on their respective workflow checks.
+- **📜 Audit & Reasoning Trail**: Managers, HR, and Finance see the full trail; employees see only their own request history.
+- Use **Logout** in the sidebar to end the current session.
 
 ### Option B: Interactive & Automated CLI
 Launch the interactive command-line interface:

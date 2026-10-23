@@ -410,7 +410,8 @@ def resume_workflow(
     request_id: str,
     decision: Literal["APPROVED", "REJECTED"],
     comments: str = "",
-    approver_id: str = "EMP002"
+    approver_id: str = "EMP002",
+    approver_username: Optional[str] = None,
 ) -> WorkflowState:
     """
     Resumes a paused workflow (leave or purchase) after an approver makes a decision.
@@ -427,10 +428,11 @@ def resume_workflow(
     cursor.execute(
         """
         UPDATE approvals
-        SET decision = ?, comments = ?, approver_id = ?, decided_at = CURRENT_TIMESTAMP
+        SET decision = ?, comments = ?, approver_id = ?, approver_username = ?,
+            decided_at = CURRENT_TIMESTAMP
         WHERE request_id = ? AND decision = 'PENDING'
         """,
-        (decision, comments, approver_id, request_id)
+        (decision, comments, approver_id, approver_username, request_id)
     )
     conn.commit()
     conn.close()
@@ -438,9 +440,14 @@ def resume_workflow(
     log_audit(
         request_id=request_id,
         step_name="Human Approval Decision",
-        actor="Manager",
+        actor=approver_username or "Manager",
         action=f"DECISION_{decision}",
-        details={"decision": decision, "comments": comments, "approver_id": approver_id}
+        details={
+            "decision": decision,
+            "comments": comments,
+            "approver_id": approver_id,
+            "approver_username": approver_username,
+        }
     )
 
     extracted_data = json.loads(req["structured_data"]) if req["structured_data"] else {}

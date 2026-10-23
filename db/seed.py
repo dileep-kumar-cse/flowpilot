@@ -6,7 +6,49 @@ Populates initial sample data for employees, leave balances, and departmental bu
 import os
 from typing import Optional
 
+import bcrypt
+
 from db.database import get_db_connection, init_db, DB_PATH
+
+
+DEMO_USERS = (
+    ("USR001", "employee", "employee123", "employee", "EMP001"),
+    ("USR002", "manager", "manager123", "manager", "EMP002"),
+    ("USR003", "hr", "hr123", "hr", "EMP003"),
+    ("USR004", "finance", "finance123", "finance", "EMP004"),
+)
+
+
+def seed_demo_users(db_path: Optional[str] = None) -> None:
+    """Create missing demo login accounts without replacing existing credentials."""
+    conn = get_db_connection(db_path)
+    existing_usernames = {
+        row["username"]
+        for row in conn.execute("SELECT username FROM users").fetchall()
+    }
+    missing_users = [
+        (user_id, username, password, role, employee_id)
+        for user_id, username, password, role, employee_id in DEMO_USERS
+        if username not in existing_usernames
+    ]
+    conn.executemany(
+        """
+        INSERT OR IGNORE INTO users (id, username, password_hash, role, employee_id)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        [
+            (
+                user_id,
+                username,
+                bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8"),
+                role,
+                employee_id,
+            )
+            for user_id, username, password, role, employee_id in missing_users
+        ],
+    )
+    conn.commit()
+    conn.close()
 
 
 def ensure_database(db_path: Optional[str] = None) -> None:
@@ -14,6 +56,7 @@ def ensure_database(db_path: Optional[str] = None) -> None:
     target_path = db_path or os.environ.get("FLOWPILOT_DB_PATH") or DB_PATH
     if os.path.exists(target_path):
         init_db(target_path)
+        seed_demo_users(target_path)
     else:
         seed_database(target_path)
 
@@ -34,8 +77,14 @@ def seed_database(db_path: str = DB_PATH) -> None:
     ]
 
     cursor.executemany("""
-    INSERT OR REPLACE INTO employees (id, name, email, department, role, manager_id)
+    INSERT INTO employees (id, name, email, department, role, manager_id)
     VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        email = excluded.email,
+        department = excluded.department,
+        role = excluded.role,
+        manager_id = excluded.manager_id
     """, employees)
 
     # Seed Leave Balances
@@ -67,6 +116,7 @@ def seed_database(db_path: str = DB_PATH) -> None:
 
     conn.commit()
     conn.close()
+    seed_demo_users(db_path)
     print("Database seeded successfully with sample employees, leave balances, and budgets.")
 
 

@@ -4,8 +4,8 @@ Main Streamlit Application Entry Point.
 """
 
 import streamlit as st
-from db.database import get_db_connection
 from db.seed import ensure_database, seed_database
+from ui.auth import authenticate_user, pages_for_role
 from ui.employee_view import render_employee_view
 from ui.approver_view import render_approver_view
 from ui.audit_view import render_audit_view
@@ -25,45 +25,61 @@ st.set_page_config(
 apply_styles()
 
 
-def get_pending_count() -> int:
-    """Helper to query the number of pending approvals."""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM approvals WHERE decision = 'PENDING'")
-        count = cursor.fetchone()[0]
-        conn.close()
-        return count
-    except Exception:
-        return 0
+def render_login() -> None:
+    """Render the login form and place only safe user details in session state."""
+    st.markdown("## Sign in to FlowPilot")
+    with st.form("login_form"):
+        username = st.text_input("Username", autocomplete="username")
+        password = st.text_input(
+            "Password",
+            type="password",
+            autocomplete="current-password",
+        )
+        submitted = st.form_submit_button("Log in", type="primary")
+    if submitted:
+        user = authenticate_user(username, password)
+        if user is None:
+            st.error("Invalid username or password. Please try again.")
+        else:
+            st.session_state["user"] = user
+            st.rerun()
 
+
+if "user" not in st.session_state:
+    render_login()
+    st.stop()
+
+user = st.session_state["user"]
+available_pages = pages_for_role(user["role"])
+if not available_pages:
+    st.session_state.pop("user", None)
+    st.error("This account has no valid access role. Please sign in again.")
+    st.stop()
 
 # Sidebar Navigation
 with st.sidebar:
     st.markdown("## ⚡ FlowPilot")
     st.caption("Workflows, moving forward.")
-
-    pending_count = get_pending_count()
-    st.caption(f"⏳ {pending_count} pending approvals")
+    st.caption(f"{user['username']} · {user['role'].title()}")
+    if st.button("Logout", use_container_width=True):
+        st.session_state.pop("user", None)
+        st.rerun()
 
     nav_selection = st.radio(
         "Navigate",
-        [
-            "👤 Employee Portal",
-            "🛡️ Approver Dashboard",
-            "📜 Audit & Reasoning Trail"
-        ],
+        available_pages,
         index=0
     )
 
-    with st.expander("Admin tools"):
-        if st.button(
-            "Reset / Re-seed Database",
-            help="Restores default sample employees, balances, and budgets",
-        ):
-            seed_database()
-            st.success("Database restored to its sample data.")
-            st.rerun()
+    if user["role"] == "manager":
+        with st.expander("Admin tools"):
+            if st.button(
+                "Reset / Re-seed Database",
+                help="Restores default sample employees, balances, and budgets",
+            ):
+                seed_database()
+                st.success("Database restored to its sample data.")
+                st.rerun()
 
 
 # Route Views
